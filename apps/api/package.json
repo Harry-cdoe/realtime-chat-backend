@@ -1,0 +1,13 @@
+{
+    "name": "@apps/api",
+    "version": "1.0.0",
+    "main": "dist/index.js",
+    "scripts": {
+        "dev": "nodemon src/index.ts",
+        "build": "tsc"
+    },
+    "devDependencies": {
+        "@types/express": "^5.0.6",
+        "express": "^5.2.1"
+    }
+}

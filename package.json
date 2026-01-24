@@ -1,0 +1,38 @@
+{
+  "name": "realtime-chat-backend",
+  "version": "1.0.0",
+  "description": "Tech:\r - Node.js + TypeScript\r - PostgreSQL (Users)\r - MongoDB (Chats, Messages)\r - Redis (Presence)\r - AWS S3 (Media)\r - Socket.io (Realtime)",
+  "main": "index.js",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint .",
+    "dev": "echo \"use app-level dev scripts\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Harry-cdoe/realtime-chat-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Harry-cdoe/realtime-chat-backend/issues"
+  },
+  "homepage": "https://github.com/Harry-cdoe/realtime-chat-backend#readme",
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.53.1",
+    "@typescript-eslint/parser": "^8.53.1",
+    "eslint": "^9.39.2",
+    "nodemon": "^3.1.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}

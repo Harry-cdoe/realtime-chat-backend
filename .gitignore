@@ -41,6 +41,11 @@ build/Release
 node_modules/
 jspm_packages/
 
+.env
+.env.*
+coverage
+.DS_Store
+
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
