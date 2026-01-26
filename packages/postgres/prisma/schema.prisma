@@ -1,0 +1,85 @@
+// ========================================
+// Prisma Schema – Identity & Auth Layer
+// Chat Application (Production-grade)
+// ========================================
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ========================================
+// User – Core Identity
+// ========================================
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ---------- Relations ----------
+  sessions      UserSession[]
+  refreshTokens RefreshToken[]
+
+  // Block system (chat safety)
+  blockedUsers BlockedUser[] @relation("blocker")
+  blockedBy    BlockedUser[] @relation("blocked")
+}
+
+// ========================================
+// UserSession – Multi-device login
+// ========================================
+
+model UserSession {
+  id        String   @id @default(uuid())
+  userId    String
+  device    String?
+  ip        String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ========================================
+// RefreshToken – Secure authentication
+// ========================================
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ========================================
+// BlockedUser – Chat blocking rules
+// ========================================
+
+model BlockedUser {
+  id        String   @id @default(uuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker User @relation("blocker", fields: [blockerId], references: [id])
+  blocked User @relation("blocked", fields: [blockedId], references: [id])
+
+  @@unique([blockerId, blockedId])
+}
