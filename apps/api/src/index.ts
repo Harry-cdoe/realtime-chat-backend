@@ -1,5 +1,5 @@
 import express from "express";
-import { prisma } from "@packages/postgres";
+import { prisma } from "../../../packages/postgres/src/client";
 
 const app = express();
 

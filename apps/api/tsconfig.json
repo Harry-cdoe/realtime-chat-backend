@@ -2,8 +2,17 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": "../..",       // Move the root up to the monorepo base
+    "baseUrl": ".",           // Keeps path resolution relative to this file
     "types": ["node", "express"],
+    "paths": {
+      "@shared/*": ["../../packages/shared/src/*"],
+      "@prisma/client": ["../../packages/postgres/generated/prisma/client"]
+    }
   },
-  "include": ["src"]
+  "include": [
+    "src", 
+    "../../packages/postgres/generated/prisma/client",
+    "../../packages/postgres/src"
+  ]
 }
