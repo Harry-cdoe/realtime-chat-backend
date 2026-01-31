@@ -12,7 +12,7 @@ export class AuthController {
                 });
             }
 
-            const result = await AuthService.signup({
+            const tokens = await AuthService.signup({
                 name,
                 email,
                 password,
@@ -21,7 +21,7 @@ export class AuthController {
 
             return res.status(201).json({
                 message: "User registered successfully",
-                data: result,
+                data: tokens,
             });
         } catch (error: any) {
             return res.status(400).json({
@@ -40,15 +40,60 @@ export class AuthController {
                 });
             }
 
-            const result = await AuthService.login(email, password);
+            const tokens = await AuthService.login(email, password);
 
             return res.status(200).json({
                 message: "Login successful",
-                data: result,
+                data: tokens,
             });
         } catch (error: any) {
             return res.status(401).json({
                 message: error.message || "Invalid credentials",
+            });
+        }
+    }
+
+    static async refresh(req: Request, res: Response) {
+        try {
+            const { refreshToken } = req.body;
+
+            if (!refreshToken) {
+                return res.status(400).json({
+                    message: "Refresh token required",
+                });
+            }
+
+            const tokens = await AuthService.refresh(refreshToken);
+
+            return res.status(200).json({
+                message: "Token refreshed",
+                data: tokens,
+            });
+        } catch (error: any) {
+            return res.status(401).json({
+                message: error.message || "Refresh failed",
+            });
+        }
+    }
+
+    static async logout(req: Request, res: Response) {
+        try {
+            const { refreshToken } = req.body;
+
+            if (!refreshToken) {
+                return res.status(400).json({
+                    message: "Refresh token required",
+                });
+            }
+
+            await AuthService.logout(refreshToken);
+
+            return res.status(200).json({
+                message: "Logged out successfully",
+            });
+        } catch {
+            return res.status(500).json({
+                message: "Logout failed",
             });
         }
     }

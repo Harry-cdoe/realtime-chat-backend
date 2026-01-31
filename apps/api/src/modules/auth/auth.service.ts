@@ -1,11 +1,14 @@
-import { UserService } from "../user/user.service";
+import jwt from "jsonwebtoken";
 import { prisma } from "../../../../../packages/postgres/src/client";
+import { UserService } from "../user/user.service";
 import { hashPassword, comparePassword } from "../lib/hash";
 import { signAccessToken, signRefreshToken } from "../lib/jwt";
 
+const REFRESH_TOKEN_EXPIRY_DAYS = 30;
+
 export class AuthService {
     /**
-     * Signup a new user
+     * Signup
      */
     static async signup(input: {
         name: string;
@@ -20,36 +23,11 @@ export class AuthService {
             password: hashedPassword,
         });
 
-        const session = await prisma.userSession.create({
-            data: {
-                userId: user.id,
-                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-            },
-        });
-
-        const accessToken = signAccessToken({
-            userId: user.id,
-            sessionId: session.id,
-        });
-
-        const refreshToken = signRefreshToken({
-            userId: user.id,
-            sessionId: session.id,
-        });
-
-        await prisma.refreshToken.create({
-            data: {
-                token: refreshToken,
-                userId: user.id,
-                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-            },
-        });
-
-        return { user, accessToken, refreshToken };
+        return this.createSession(user.id);
     }
 
     /**
-     * Login existing user
+     * Login
      */
     static async login(email: string, password: string) {
         const user = await UserService.findByEmail(email);
@@ -64,31 +42,88 @@ export class AuthService {
             throw new Error("Invalid email or password");
         }
 
+        return this.createSession(user.id);
+    }
+
+    /**
+     * Refresh token rotation
+     */
+    static async refresh(refreshToken: string) {
+        let payload: any;
+
+        try {
+            payload = jwt.verify(
+                refreshToken,
+                process.env.JWT_REFRESH_SECRET!
+            );
+        } catch {
+            throw new Error("Invalid refresh token");
+        }
+
+        const storedToken = await prisma.refreshToken.findUnique({
+            where: { token: refreshToken },
+        });
+
+        if (!storedToken || storedToken.revoked) {
+            throw new Error("Refresh token revoked");
+        }
+
+        // 🔥 Rotation: invalidate old token
+        await prisma.refreshToken.delete({
+            where: { token: refreshToken },
+        });
+
+        return this.createSession(payload.userId);
+    }
+
+    /**
+     * Logout
+     */
+    static async logout(refreshToken: string) {
+        await prisma.refreshToken.updateMany({
+            where: { token: refreshToken },
+            data: { revoked: true },
+        });
+    }
+
+    /**
+     * Internal session creator
+     */
+    private static async createSession(userId: string) {
         const session = await prisma.userSession.create({
             data: {
-                userId: user.id,
-                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+                userId,
+                expiresAt: new Date(
+                    Date.now() +
+                    REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+                ),
             },
         });
 
         const accessToken = signAccessToken({
-            userId: user.id,
+            userId,
             sessionId: session.id,
         });
 
         const refreshToken = signRefreshToken({
-            userId: user.id,
+            userId,
             sessionId: session.id,
         });
 
         await prisma.refreshToken.create({
             data: {
                 token: refreshToken,
-                userId: user.id,
-                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+                userId,
+                expiresAt: new Date(
+                    Date.now() +
+                    REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+                ),
             },
         });
 
-        return { user, accessToken, refreshToken };
+        return {
+            accessToken,
+            refreshToken,
+        };
     }
 }
