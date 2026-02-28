@@ -15,17 +15,14 @@ const MessageSchema = new Schema<IMessage>(
             required: true,
             index: true
         },
-
         senderId: {
             type: String,
             required: true
         },
-
         content: {
             type: String,
             required: true
         },
-
         type: {
             type: String,
             enum: ["text", "image", "video", "file"],
@@ -34,7 +31,6 @@ const MessageSchema = new Schema<IMessage>(
     },
     { timestamps: true }
 );
-
 // 🔥 CRITICAL PERFORMANCE INDEX
 MessageSchema.index({ chatId: 1, createdAt: -1 });
 

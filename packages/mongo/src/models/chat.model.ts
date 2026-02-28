@@ -31,23 +31,19 @@ const ChatSchema = new Schema<IChat>(
       enum: ["private", "group"],
       required: true
     },
-
     participants: [
       {
         type: String,
         required: true
       }
     ],
-
     name: {
       type: String
     },
-
     lastMessage: LastMessageSchema
   },
   { timestamps: true }
 );
-
 // 🔥 IMPORTANT INDEX FOR FAST USER CHAT FETCH
 ChatSchema.index({ participants: 1 });
 
