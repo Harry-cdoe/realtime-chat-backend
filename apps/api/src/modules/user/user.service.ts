@@ -1,4 +1,5 @@
 import { prisma } from "../../../../../packages/postgres/src/client";
+import bcrypt from "bcrypt";
 
 export interface CreateUserInput {
     name: string;
@@ -8,44 +9,41 @@ export interface CreateUserInput {
 }
 
 export class UserService {
-    /**
-     * Create a new user
-     */
+
     static async createUser(data: CreateUserInput) {
+
+        // Check existing user
         const existingUser = await prisma.user.findUnique({
             where: { email: data.email },
         });
 
         if (existingUser) {
-            throw new Error("User already exists with this email");
+            throw new Error("User already exists");
         }
 
+        // Hash password
+        const hashedPassword = await bcrypt.hash(data.password, 10);
+
+        // Create user
         return prisma.user.create({
             data: {
                 name: data.name,
                 email: data.email,
-                password: data.password,
+                password: hashedPassword,
                 avatarUrl: data.avatarUrl,
             },
         });
     }
 
-    /**
-     * Find user by email
-     */
     static async findByEmail(email: string) {
         return prisma.user.findUnique({
             where: { email },
         });
     }
 
-    /**
-     * Find user by ID
-     */
     static async findById(id: string) {
         return prisma.user.findUnique({
             where: { id },
         });
     }
-
 }

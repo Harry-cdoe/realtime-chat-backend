@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/Harry-cdoe/realtime-chat-backend#readme",
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@typescript-eslint/eslint-plugin": "^8.53.1",
     "@typescript-eslint/parser": "^8.53.1",
     "eslint": "^9.39.2",
@@ -33,6 +34,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "mongoose": "^9.1.5"
