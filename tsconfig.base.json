@@ -8,7 +8,10 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["packages/shared/src/*"]
+      "@postgres/*": ["packages/postgres/src/*"],
+      "@mongo/*": ["packages/mongo/src/*"],
+      "@redis/*": ["packages/redis/src/*"],
+      "@rabbitmq/*": ["packages/rabbitmq/src/*"]
     }
   }
 }

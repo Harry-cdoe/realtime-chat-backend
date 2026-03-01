@@ -2,51 +2,117 @@ import mongoose from "mongoose";
 
 let isConnected = false;
 
-export const connectMongo = async () => {
+const MONGO_URL = process.env.MONGO_URL;
 
-    if (isConnected) {
-        return;
-    }
+if (!MONGO_URL) {
+  throw new Error("MONGO_URL not defined");
+}
 
-    try {
+/**
+ * Connect to MongoDB (Singleton)
+ */
+export const connectMongo = async (): Promise<void> => {
 
-        const mongoUrl = process.env.MONGO_URL;
+  if (isConnected) {
 
-        if (!mongoUrl) {
-            throw new Error("MONGO_URL not defined");
-        }
+    console.log("MongoDB already connected");
 
-        await mongoose.connect(mongoUrl, {
-            maxPoolSize: 20,
-        });
+    return;
 
-        isConnected = true;
+  }
 
-        console.log("MongoDB connected");
+  try {
 
-        mongoose.connection.on("error", (err) => {
-            console.error("MongoDB error:", err);
-        });
+    console.log("Connecting to MongoDB...");
 
-        mongoose.connection.on("disconnected", () => {
-            console.warn("MongoDB disconnected");
-        });
+    await mongoose.connect(MONGO_URL, {
 
-    } catch (error) {
+      maxPoolSize: 20, // max concurrent connections
 
-        console.error("MongoDB connection failed:", error);
-        process.exit(1);
+      serverSelectionTimeoutMS: 5000, // fail fast if DB unavailable
 
-    }
+      socketTimeoutMS: 45000, // close inactive sockets
+
+    });
+
+    isConnected = true;
+
+    console.log("MongoDB connected successfully");
+
+  }
+  catch (error) {
+
+    console.error("MongoDB connection failed:", error);
+
+    process.exit(1);
+
+  }
+
 };
 
-// graceful shutdown
-process.on("SIGINT", async () => {
 
-    await mongoose.connection.close();
+/**
+ * Disconnect MongoDB safely
+ */
+export const disconnectMongo = async (): Promise<void> => {
 
-    console.log("MongoDB disconnected on shutdown");
+  if (!isConnected) return;
 
-    process.exit(0);
+  try {
+
+    await mongoose.disconnect();
+
+    isConnected = false;
+
+    console.log("MongoDB disconnected");
+
+  }
+  catch (error) {
+
+    console.error("MongoDB disconnect error:", error);
+
+  }
+
+};
+
+
+/**
+ * Connection event listeners
+ */
+mongoose.connection.on("connected", () => {
+
+  console.log("MongoDB connection established");
 
 });
+
+mongoose.connection.on("error", (error) => {
+
+  console.error("MongoDB connection error:", error);
+
+});
+
+mongoose.connection.on("disconnected", () => {
+
+  console.warn("MongoDB connection lost");
+
+  isConnected = false;
+
+});
+
+
+/**
+ * Graceful shutdown handler
+ */
+async function shutdown(signal: string) {
+
+  console.log(`Mongo shutdown signal received: ${signal}`);
+
+  await disconnectMongo();
+
+  process.exit(0);
+
+}
+
+process.on("SIGINT", shutdown);
+
+process.on("SIGTERM", shutdown);
