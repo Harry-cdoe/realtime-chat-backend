@@ -1,77 +1,153 @@
-import * as dotenv from 'dotenv';
-import * as path from 'path';
+import * as dotenv from "dotenv";
+import * as path from "path";
 
-// Load environment variables
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({
+  path: path.resolve(__dirname, "../.env"),
+});
 
-import { PrismaClient } from '../generated/prisma';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
+import { PrismaClient } from "../generated/prisma";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 
-// Prevent multiple instances in dev (Hot reload safety)
-const globalForPrisma = globalThis as unknown as {
-  prisma?: PrismaClient;
-};
+//
+// ✅ Validate environment variable
+//
+const DATABASE_URL = process.env.DATABASE_URL;
 
-// Ensure DATABASE_URL exists
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error('DATABASE_URL environment variable is not set');
+if (!DATABASE_URL) {
+  throw new Error("DATABASE_URL is not defined");
 }
 
 //
-// ✅ Improvement 1: Proper Pool Configuration
+// ✅ Global singleton type safety
 //
-const pool = new Pool({
-  connectionString,
+const globalForPrisma = globalThis as unknown as {
+  prisma?: PrismaClient;
+  pool?: Pool;
+};
 
-  // ✅ Maximum number of connections in pool
-  max: 20,
+//
+// ✅ Create connection pool (singleton)
+//
+export const pool =
+  globalForPrisma.pool ??
+  new Pool({
+    connectionString: DATABASE_URL,
 
-  // ✅ Close idle connections after 30 seconds
-  idleTimeoutMillis: 30000,
+    max: 20, // max connections
 
-  // ✅ Timeout if connection not acquired in 2 seconds
-  connectionTimeoutMillis: 2000,
+    idleTimeoutMillis: 30000, // close idle connections
+
+    connectionTimeoutMillis: 2000, // fail fast
+
+    allowExitOnIdle: false,
+  });
+
+//
+// ✅ Store pool globally (dev safety)
+//
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.pool = pool;
+}
+
+//
+// ✅ Pool error handler (CRITICAL)
+//
+pool.on("error", (error) => {
+  console.error("Unexpected Postgres pool error:", error);
+});
+
+pool.on("connect", () => {
+  console.log("Postgres pool connected");
+});
+
+pool.on("remove", () => {
+  console.log("Postgres connection removed from pool");
 });
 
 //
-// ✅ Improvement 2: Prisma Adapter using pool
+// ✅ Prisma adapter
 //
 const adapter = new PrismaPg(pool);
 
 //
-// ✅ Improvement 3: Singleton Prisma Client
+// ✅ Create Prisma client singleton
 //
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     adapter,
-    log: ['error', 'warn'],
+
+    log:
+      process.env.NODE_ENV === "development"
+        ? ["query", "error", "warn"]
+        : ["error"],
   });
 
-if (process.env.NODE_ENV !== 'production') {
+//
+// ✅ Store globally
+//
+if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
 }
 
 //
-// ✅ Improvement 4: Graceful shutdown (VERY IMPORTANT)
+// ✅ Connection health check
 //
-async function shutdown() {
-  console.log('Closing database connections...');
+export async function checkPostgresHealth() {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
 
-  await prisma.$disconnect();
+    return true;
+  } catch (error) {
+    console.error("Postgres health check failed:", error);
 
-  await pool.end();
-
-  process.exit(0);
+    return false;
+  }
 }
 
-// Handle Ctrl+C
-process.on('SIGINT', shutdown);
+//
+// ✅ Graceful shutdown handler
+//
+let isShuttingDown = false;
 
-// Handle Docker / Kubernetes shutdown
-process.on('SIGTERM', shutdown);
+async function shutdown(signal: string) {
+  if (isShuttingDown) return;
 
-// Handle Node crashes
-process.on('beforeExit', shutdown);
+  isShuttingDown = true;
+
+  console.log(`Postgres shutdown signal received: ${signal}`);
+
+  try {
+    await prisma.$disconnect();
+
+    await pool.end();
+
+    console.log("Postgres connections closed");
+
+    process.exit(0);
+  } catch (error) {
+    console.error("Error during Postgres shutdown:", error);
+
+    process.exit(1);
+  }
+}
+
+//
+// ✅ Production shutdown signals
+//
+process.on("SIGINT", shutdown);
+
+process.on("SIGTERM", shutdown);
+
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception:", error);
+
+  shutdown("uncaughtException");
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled Rejection:", reason);
+
+  shutdown("unhandledRejection");
+});

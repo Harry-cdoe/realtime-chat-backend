@@ -1,6 +1,7 @@
 import { ChatModel } from "../../../../../packages/mongo/src/models/chat.model";
 import { MessageModel } from "../../../../../packages/mongo/src/models/message.model";
 import { MessageStatusModel } from "../../../../../packages/mongo/src/models/MessageStatus.model";
+import {getIO} from "../lib/socket";
 
 export class ChatService {
 
@@ -70,6 +71,9 @@ export class ChatService {
 
         await chat.save();
 
+        // 🔥 REAL-TIME EVENT
+        const io = getIO();
+        io.to(chatId).emit("new_message", message);
         return message;
     }
 
@@ -81,8 +85,6 @@ export class ChatService {
     }
 
     static async markAsRead(chatId: string, userId: string) {
-
-        // 🔥 ATOMIC UPDATE – no loops
         await MessageStatusModel.updateMany(
             {
                 chatId,
@@ -93,6 +95,13 @@ export class ChatService {
                 $set: { status: "read" }
             }
         );
+
+        const io = getIO();
+
+        io.to(chatId).emit("messages_read", {
+            chatId,
+            userId
+        });
 
         return true;
     }

@@ -1,50 +1,33 @@
-import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
+import { Request, Response } from "express";
+import { AuthService } from "./auth.service"; // Ensure path is correct
 
-interface JwtPayload {
-    userId: string;
-    email: string;
-}
-
-export interface AuthenticatedRequest extends Request {
-    user: JwtPayload;
-}
-
-export const requireAuth = (
-    req: Request,
-    res: Response,
-    next: NextFunction
-) => {
-    try {
-        const authHeader = req.headers.authorization;
-
-        if (!authHeader?.startsWith("Bearer ")) {
-            return res.status(401).json({
-                message: "Missing or invalid token",
-            });
+export class AuthController {
+    static async signup(req: Request, res: Response) {
+        try {
+            const result = await AuthService.signup(req.body);
+            return res.status(201).json(result);
+        } catch (error: any) {
+            return res.status(400).json({ message: error.message });
         }
-
-        const token = authHeader.split(" ")[1];
-
-        const decoded = jwt.verify(
-            token,
-            process.env.JWT_ACCESS_SECRET!
-        ) as JwtPayload;
-
-        (req as AuthenticatedRequest).user = decoded;
-
-        next();
-
-    } catch (error) {
-
-        if (error instanceof jwt.TokenExpiredError) {
-            return res.status(401).json({
-                message: "Token expired",
-            });
-        }
-
-        return res.status(401).json({
-            message: "Invalid token",
-        });
     }
-};
+
+    static async login(req: Request, res: Response) {
+        try {
+            const { email, password } = req.body;
+            const result = await AuthService.login(email, password);
+            return res.json(result);
+        } catch (error: any) {
+            return res.status(401).json({ message: error.message });
+        }
+    }
+
+    static async refresh(req: Request, res: Response) {
+        try {
+            const { refreshToken } = req.body;
+            const result = await AuthService.refresh(refreshToken);
+            return res.json(result);
+        } catch (error: any) {
+            return res.status(401).json({ message: error.message });
+        }
+    }
+}
