@@ -16,12 +16,7 @@ export class AuthService {
         password: string;
         avatarUrl?: string;
     }) {
-        const hashedPassword = await hashPassword(input.password);
-
-        const user = await UserService.createUser({
-            ...input,
-            password: hashedPassword,
-        });
+        const user = await UserService.createUser(input);
 
         return this.createSession(user.id);
     }
