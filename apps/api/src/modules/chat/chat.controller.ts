@@ -4,17 +4,21 @@ import { ChatService } from "./chat.service";
 export class ChatController {
 
     static async createPrivate(req: Request, res: Response) {
-        try {
-            const { user1, user2 } = req.body;
+    try {
+        const user1 = (req as any).user.userId; // Logged in user from token
+        const { userId: user2 } = req.body;            // The friend's ID
 
-            const chat = await ChatService.createPrivateChat(user1, user2);
+        if (!user2) {
+            return res.status(400).json({ message: "Recipient user2 is required" });
+        }
 
-            res.json(chat);
-        } catch (err: any) {
+        const chat = await ChatService.createPrivateChat(user1, user2);
+        res.json(chat);
+    } catch (err: any) {
             res.status(400).json({ message: err.message });
         }
     }
-
+    
     static async createGroup(req: Request, res: Response) {
         try {
             const { name, participants } = req.body;

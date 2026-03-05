@@ -4,7 +4,7 @@
     "private": true,
     "main": "dist/index.js",
     "scripts": {
-        "dev": "nodemon -r dotenv/config src/index.ts",
+        "dev": "nodemon -r dotenv/config --exec ts-node --files src/index.ts",
         "build": "tsc"
     },
     "dependencies": {
