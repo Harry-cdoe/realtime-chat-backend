@@ -19,9 +19,9 @@ const LastMessageSchema = new Schema<ILastMessage>(
   {
     text: { type: String },
     senderId: { type: String },
-    timestamp: { type: Date }
+    timestamp: { type: Date },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const ChatSchema = new Schema<IChat>(
@@ -29,20 +29,20 @@ const ChatSchema = new Schema<IChat>(
     type: {
       type: String,
       enum: ["private", "group"],
-      required: true
+      required: true,
     },
     participants: [
       {
         type: String,
-        required: true
-      }
+        required: true,
+      },
     ],
     name: {
-      type: String
+      type: String,
     },
-    lastMessage: LastMessageSchema
+    lastMessage: LastMessageSchema,
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 // 🔥 IMPORTANT INDEX FOR FAST USER CHAT FETCH
 ChatSchema.index({ participants: 1 });
