@@ -14,24 +14,24 @@ const MessageStatusSchema = new Schema<IMessageStatus>(
     chatId: {
       type: String,
       required: true,
-      index: true
+      index: true,
     },
     messageId: {
       type: String,
       required: true,
-      index: true
+      index: true,
     },
     userId: {
       type: String,
-      required: true
+      required: true,
     },
     status: {
       type: String,
       enum: ["sent", "delivered", "read"],
-      default: "sent"
-    }
+      default: "sent",
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // 🔥 SUPER IMPORTANT COMPOSITE INDEX
@@ -40,5 +40,5 @@ MessageStatusSchema.index({ chatId: 1, userId: 1 });
 MessageStatusSchema.index({ messageId: 1, userId: 1 });
 export const MessageStatusModel = mongoose.model<IMessageStatus>(
   "MessageStatus",
-  MessageStatusSchema
+  MessageStatusSchema,
 );

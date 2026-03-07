@@ -1,108 +1,106 @@
 import { ChatModel } from "../../../../../packages/mongo/src/models/chat.model";
 import { MessageModel } from "../../../../../packages/mongo/src/models/message.model";
 import { MessageStatusModel } from "../../../../../packages/mongo/src/models/MessageStatus.model";
-import {getIO} from "../lib/socket";
+import { getIO } from "../lib/socket";
 
 export class ChatService {
+  static async createPrivateChat(user1: string, user2: string) {
+    const existing = await ChatModel.findOne({
+      type: "private",
+      participants: { $all: [user1, user2] },
+    });
 
-    static async createPrivateChat(user1: string, user2: string) {
-        const existing = await ChatModel.findOne({
-            type: "private",
-            participants: { $all: [user1, user2] }
-        });
+    if (existing) return existing;
 
-        if (existing) return existing;
+    return ChatModel.create({
+      type: "private",
+      participants: [user1, user2],
+    });
+  }
 
-        return ChatModel.create({
-            type: "private",
-            participants: [user1, user2]
-        });
-    }
+  static async createGroupChat(name: string, participants: string[]) {
+    return ChatModel.create({
+      type: "group",
+      name,
+      participants,
+    });
+  }
 
-    static async createGroupChat(name: string, participants: string[]) {
-        return ChatModel.create({
-            type: "group",
-            name,
-            participants
-        });
-    }
+  static async getUserChats(userId: string) {
+    return ChatModel.find({
+      participants: userId,
+    })
+      .sort({ updatedAt: -1 })
+      .lean();
+  }
 
-    static async getUserChats(userId: string) {
-        return ChatModel.find({
-            participants: userId
-        })
-            .sort({ updatedAt: -1 })
-            .lean();
-    }
+  static async sendMessage(
+    chatId: string,
+    senderId: string,
+    content: string,
+    type: "text" | "image" | "video" | "file",
+  ) {
+    const chat = await ChatModel.findById(chatId);
+    if (!chat) throw new Error("Chat not found");
 
-    static async sendMessage(
-        chatId: string,
-        senderId: string,
-        content: string,
-        type: "text" | "image" | "video" | "file"
-    ) {
+    const message = await MessageModel.create({
+      chatId,
+      senderId,
+      content,
+      type,
+    });
 
-        const chat = await ChatModel.findById(chatId);
-        if (!chat) throw new Error("Chat not found");
+    // 🔥 BULK INSERT OPTIMIZATION
+    const statuses = chat.participants.map((pId) => ({
+      chatId,
+      messageId: message._id,
+      userId: pId,
+      status: pId === senderId ? "read" : "sent",
+    }));
 
-        const message = await MessageModel.create({
-            chatId,
-            senderId,
-            content,
-            type
-        });
+    await MessageStatusModel.insertMany(statuses);
 
-        // 🔥 BULK INSERT OPTIMIZATION
-        const statuses = chat.participants.map(pId => ({
-            chatId,
-            messageId: message._id,
-            userId: pId,
-            status: pId === senderId ? "read" : "sent"
-        }));
+    // Update last message in chat
+    chat.lastMessage = {
+      text: content,
+      senderId,
+      timestamp: new Date(),
+    };
 
-        await MessageStatusModel.insertMany(statuses);
+    await chat.save();
 
-        // Update last message in chat
-        chat.lastMessage = {
-            text: content,
-            senderId,
-            timestamp: new Date()
-        };
+    // 🔥 REAL-TIME EVENT
+    const io = getIO();
+    io.to(chatId).emit("new_message", message);
+    return message;
+  }
 
-        await chat.save();
+  static async getMessages(chatId: string) {
+    return MessageModel.find({ chatId })
+      .sort({ createdAt: 1 })
+      .limit(50)
+      .lean();
+  }
 
-        // 🔥 REAL-TIME EVENT
-        const io = getIO();
-        io.to(chatId).emit("new_message", message);
-        return message;
-    }
+  static async markAsRead(chatId: string, userId: string) {
+    await MessageStatusModel.updateMany(
+      {
+        chatId,
+        userId,
+        status: { $ne: "read" },
+      },
+      {
+        $set: { status: "read" },
+      },
+    );
 
-    static async getMessages(chatId: string) {
-        return MessageModel.find({ chatId })
-            .sort({ createdAt: 1 })
-            .limit(50)
-            .lean();
-    }
+    const io = getIO();
 
-    static async markAsRead(chatId: string, userId: string) {
-        await MessageStatusModel.updateMany(
-            {
-                chatId,
-                userId,
-                status: { $ne: "read" }
-            },
-            {
-                $set: { status: "read" }
-            }
-        );
+    io.to(chatId).emit("messages_read", {
+      chatId,
+      userId,
+    });
 
-        const io = getIO();
-
-        io.to(chatId).emit("messages_read", {
-            chatId,
-            userId
-        });
-
-        return true;
-    }
+    return true;
+  }
 }

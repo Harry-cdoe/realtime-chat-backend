@@ -7,118 +7,113 @@ import { signAccessToken, signRefreshToken } from "../lib/jwt";
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 
 export class AuthService {
-    /**
-     * Signup
-     */
-    static async signup(input: {
-        name: string;
-        email: string;
-        password: string;
-        avatarUrl?: string;
-    }) {
-        const user = await UserService.createUser(input);
+  /**
+   * Signup
+   */
+  static async signup(input: {
+    name: string;
+    email: string;
+    password: string;
+    avatarUrl?: string;
+  }) {
+    const user = await UserService.createUser(input);
 
-        return this.createSession(user.id);
+    return this.createSession(user.id);
+  }
+
+  /**
+   * Login
+   */
+  static async login(email: string, password: string) {
+    const user = await UserService.findByEmail(email);
+
+    if (!user) {
+      throw new Error("Invalid email or password");
     }
 
-    /**
-     * Login
-     */
-    static async login(email: string, password: string) {
-        const user = await UserService.findByEmail(email);
+    const isValid = await comparePassword(password, user.password);
 
-        if (!user) {
-            throw new Error("Invalid email or password");
-        }
-
-        const isValid = await comparePassword(password, user.password);
-
-        if (!isValid) {
-            throw new Error("Invalid email or password");
-        }
-
-        return this.createSession(user.id);
+    if (!isValid) {
+      throw new Error("Invalid email or password");
     }
 
-    /**
-     * Refresh token rotation
-     */
-    static async refresh(refreshToken: string) {
-        let payload: any;
+    return this.createSession(user.id);
+  }
 
-        try {
-            payload = jwt.verify(
-                refreshToken,
-                process.env.JWT_REFRESH_SECRET!
-            );
-        } catch {
-            throw new Error("Invalid refresh token");
-        }
+  /**
+   * Refresh token rotation
+   */
+  static async refresh(refreshToken: string) {
+    let payload: any;
 
-        const storedToken = await prisma.refreshToken.findUnique({
-            where: { token: refreshToken },
-        });
-
-        if (!storedToken || storedToken.revoked) {
-            throw new Error("Refresh token revoked");
-        }
-
-        // 🔥 Rotation: invalidate old token
-        await prisma.refreshToken.delete({
-            where: { token: refreshToken },
-        });
-
-        return this.createSession(payload.userId);
+    try {
+      payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!);
+    } catch {
+      throw new Error("Invalid refresh token");
     }
 
-    /**
-     * Logout
-     */
-    static async logout(refreshToken: string) {
-        await prisma.refreshToken.updateMany({
-            where: { token: refreshToken },
-            data: { revoked: true },
-        });
+    const storedToken = await prisma.refreshToken.findUnique({
+      where: { token: refreshToken },
+    });
+
+    if (!storedToken || storedToken.revoked) {
+      throw new Error("Refresh token revoked");
     }
 
-    /**
-     * Internal session creator
-     */
-    private static async createSession(userId: string) {
-        const session = await prisma.userSession.create({
-            data: {
-                userId,
-                expiresAt: new Date(
-                    Date.now() +
-                    REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
-                ),
-            },
-        });
+    // 🔥 Rotation: invalidate old token
+    await prisma.refreshToken.delete({
+      where: { token: refreshToken },
+    });
 
-        const accessToken = signAccessToken({
-            userId,
-            sessionId: session.id,
-        });
+    return this.createSession(payload.userId);
+  }
 
-        const refreshToken = signRefreshToken({
-            userId,
-            sessionId: session.id,
-        });
+  /**
+   * Logout
+   */
+  static async logout(refreshToken: string) {
+    await prisma.refreshToken.updateMany({
+      where: { token: refreshToken },
+      data: { revoked: true },
+    });
+  }
 
-        await prisma.refreshToken.create({
-            data: {
-                token: refreshToken,
-                userId,
-                expiresAt: new Date(
-                    Date.now() +
-                    REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
-                ),
-            },
-        });
+  /**
+   * Internal session creator
+   */
+  private static async createSession(userId: string) {
+    const session = await prisma.userSession.create({
+      data: {
+        userId,
+        expiresAt: new Date(
+          Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
+        ),
+      },
+    });
 
-        return {
-            accessToken,
-            refreshToken,
-        };
-    }
+    const accessToken = signAccessToken({
+      userId,
+      sessionId: session.id,
+    });
+
+    const refreshToken = signRefreshToken({
+      userId,
+      sessionId: session.id,
+    });
+
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshToken,
+        userId,
+        expiresAt: new Date(
+          Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
+        ),
+      },
+    });
+
+    return {
+      accessToken,
+      refreshToken,
+    };
+  }
 }
