@@ -6,6 +6,7 @@ import {
   disconnectMongo,
 } from "../../../packages/mongo/src/client";
 import { initSocket } from "././modules/lib/socket";
+import { connectRedis, redis } from "../../../packages/redis/src/client";
 
 const app = express();
 
@@ -36,6 +37,7 @@ let server: any;
 
 async function startServer() {
   try {
+    await connectRedis();
     console.log("Connecting databases...");
 
     await connectMongo();
@@ -49,7 +51,7 @@ async function startServer() {
       console.log(`Server running on port ${PORT}`);
     });
 
-    initSocket(server);
+    await initSocket(server);
   } catch (error) {
     console.error("Startup error:", error);
     process.exit(1);
@@ -68,6 +70,11 @@ async function shutdown(signal: string) {
 
     await prisma.$disconnect();
     await disconnectMongo();
+
+    if (redis.isOpen) {
+      await redis.quit();
+      console.log("Redis connection closed");
+    }
 
     console.log("All connections closed");
     process.exit(0);
