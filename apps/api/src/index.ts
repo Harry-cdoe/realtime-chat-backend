@@ -7,6 +7,11 @@ import {
 } from "../../../packages/mongo/src/client";
 import { initSocket } from "././modules/lib/socket";
 import { connectRedis, redis } from "../../../packages/redis/src/client";
+import {
+  connectRabbitMQ,
+  closeRabbitMQ,
+} from "../../../packages/rabbitmq/src/connection";
+import { startConsumer } from "../../../packages/rabbitmq/src/consumer";
 
 const app = express();
 
@@ -20,6 +25,11 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/chats", chatRoutes);
 
+app.get("/", (_req, res) => {
+  res.json({
+    message: "Chat Backend API Running 🚀",
+  });
+});
 // health check
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
@@ -43,6 +53,9 @@ async function startServer() {
     await connectMongo();
     await prisma.$connect();
 
+    await connectRabbitMQ();
+    await startConsumer();
+
     console.log("Databases connected");
 
     const PORT = process.env.PORT || 3000;
@@ -63,6 +76,7 @@ startServer();
 // graceful shutdown handler
 async function shutdown(signal: string) {
   console.log(`Received ${signal}`);
+
   try {
     server?.close(() => {
       console.log("HTTP server closed");
@@ -76,7 +90,11 @@ async function shutdown(signal: string) {
       console.log("Redis connection closed");
     }
 
+    // 🔥 close rabbitmq
+    await closeRabbitMQ();
+
     console.log("All connections closed");
+
     process.exit(0);
   } catch (error) {
     console.error("Shutdown error:", error);
