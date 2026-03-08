@@ -75,10 +75,11 @@ export class ChatService {
     return message;
   }
 
-  static async getMessages(chatId: string) {
+  static async getMessages(chatId: string, page = 1, limit = 50) {
     return MessageModel.find({ chatId })
-      .sort({ createdAt: 1 })
-      .limit(50)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
       .lean();
   }
 
