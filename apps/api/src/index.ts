@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import cors from "cors";
 import { prisma } from "../../../packages/postgres/src/client";
 import {
   connectMongo,
@@ -14,6 +15,13 @@ import {
 import { startConsumer } from "../../../packages/rabbitmq/src/consumer";
 
 const app = express();
+
+app.use(cors({
+  origin: process.env.CLIENT_ORIGIN || "http://localhost:3001",
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+}));
 
 app.use(express.json());
 
@@ -53,8 +61,16 @@ async function startServer() {
     await connectMongo();
     await prisma.$connect();
 
-    await connectRabbitMQ();
-    await startConsumer();
+    const rabbitConnected = await connectRabbitMQ();
+    if (rabbitConnected) {
+      try {
+        await startConsumer();
+      } catch (error) {
+        console.warn("Could not start RabbitMQ consumer:", error);
+      }
+    } else {
+      console.warn("RabbitMQ is not available, continuing without queue consumer.");
+    }
 
     console.log("Databases connected");
 
