@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
+import { verifyAccessToken } from "./jwt";
 
 interface JwtPayload {
   userId: string;
@@ -20,10 +20,7 @@ export const requireAuth = (
 
     const token = authHeader.split(" ")[1];
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_ACCESS_SECRET!,
-    ) as JwtPayload;
+    const decoded = verifyAccessToken(token) as JwtPayload;
 
     // attach user to request
     (req as any).user = decoded;

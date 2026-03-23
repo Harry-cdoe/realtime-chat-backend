@@ -1,5 +1,7 @@
 import "dotenv/config";
 import express from "express";
+import { createServer } from "http";
+import cors from "cors";
 import { prisma } from "../../../packages/postgres/src/client";
 import {
   connectMongo,
@@ -12,8 +14,18 @@ import {
   closeRabbitMQ,
 } from "../../../packages/rabbitmq/src/connection";
 import { startConsumer } from "../../../packages/rabbitmq/src/consumer";
+import { apiPort, frontendOrigins, socketPort } from "./modules/lib/config";
 
 const app = express();
+
+app.use(
+  cors({
+    origin: frontendOrigins,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  }),
+);
 
 app.use(express.json());
 
@@ -25,17 +37,16 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/chats", chatRoutes);
 
-app.get("/", (_req, res) => {
+app.use("/", (_req, res) => {
   res.json({
-    message: "Chat Backend API Running 🚀",
+    message: "Chat Backend API Running",
   });
 });
-// health check
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-// error handler
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error("Global error:", err);
   res.status(500).json({
@@ -44,6 +55,7 @@ app.use((err: any, _req: any, res: any, _next: any) => {
 });
 
 let server: any;
+let socketServer: any;
 
 async function startServer() {
   try {
@@ -53,18 +65,28 @@ async function startServer() {
     await connectMongo();
     await prisma.$connect();
 
-    await connectRabbitMQ();
-    await startConsumer();
+    const rabbitConnected = await connectRabbitMQ();
+    if (rabbitConnected) {
+      try {
+        await startConsumer();
+      } catch (error) {
+        console.warn("Could not start RabbitMQ consumer:", error);
+      }
+    } else {
+      console.warn("RabbitMQ is not available, continuing without queue consumer.");
+    }
 
     console.log("Databases connected");
 
-    const PORT = process.env.PORT || 3000;
-
-    server = app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+    server = app.listen(apiPort, () => {
+      console.log(`API server running on port ${apiPort}`);
     });
 
-    await initSocket(server);
+    socketServer = createServer();
+    await initSocket(socketServer);
+    socketServer.listen(socketPort, () => {
+      console.log(`Socket server running on port ${socketPort}`);
+    });
   } catch (error) {
     console.error("Startup error:", error);
     process.exit(1);
@@ -73,13 +95,15 @@ async function startServer() {
 
 startServer();
 
-// graceful shutdown handler
 async function shutdown(signal: string) {
   console.log(`Received ${signal}`);
 
   try {
     server?.close(() => {
       console.log("HTTP server closed");
+    });
+    socketServer?.close(() => {
+      console.log("Socket server closed");
     });
 
     await prisma.$disconnect();
@@ -90,7 +114,6 @@ async function shutdown(signal: string) {
       console.log("Redis connection closed");
     }
 
-    // 🔥 close rabbitmq
     await closeRabbitMQ();
 
     console.log("All connections closed");
@@ -102,7 +125,6 @@ async function shutdown(signal: string) {
   }
 }
 
-// important signals
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 process.on("uncaughtException", (error) => {

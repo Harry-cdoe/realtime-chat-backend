@@ -3,32 +3,42 @@ import amqp from "amqplib";
 let connection: any;
 let channel: any;
 const RABBITMQ_URL = process.env.RABBITMQ_URL as string;
-export const connectRabbitMQ = async () => {
-  try {
-    connection = await amqp.connect(RABBITMQ_URL);
 
-    connection.on("close", () => {
-      console.log("RabbitMQ connection closed. Reconnecting...");
-      reconnect();
-    });
+export const connectRabbitMQ = async (retries = 5, delay = 2000): Promise<boolean> => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      connection = await amqp.connect(RABBITMQ_URL);
 
-    connection.on("error", (err: any) => {
-      console.error("RabbitMQ error:", err);
-    });
+      connection.on("close", () => {
+        console.log("RabbitMQ connection closed. Reconnecting...");
+        channel = null;
+      });
 
-    channel = await connection.createChannel();
+      connection.on("error", (err: any) => {
+        console.error("RabbitMQ error:", err);
+      });
 
-    console.log("✅ RabbitMQ Connected");
-  } catch (error) {
-    console.error("RabbitMQ connection failed. Retrying...");
-    reconnect();
+      channel = await connection.createChannel();
+
+      console.log("✅ RabbitMQ Connected");
+      return true;
+    } catch (error) {
+      console.error(
+        `RabbitMQ connection failed (attempt ${attempt}/${retries}):`,
+        error,
+      );
+
+      if (attempt < retries) {
+        console.log(`Retrying in ${delay / 1000} seconds...`);
+        await new Promise((res) => setTimeout(res, delay));
+      }
+    }
   }
-};
 
-const reconnect = () => {
-  setTimeout(() => {
-    connectRabbitMQ();
-  }, 5000); // retry after 5 sec
+  console.error(
+    "RabbitMQ failed to connect after maximum retries. Make sure RabbitMQ is running.",
+  );
+  return false;
 };
 
 export const getChannel = () => {
