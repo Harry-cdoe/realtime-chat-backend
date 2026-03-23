@@ -1,20 +1,23 @@
 import { Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
-import jwt from "jsonwebtoken";
 import { redis } from "../../../../../packages/redis/src/client";
 import { sendMessageToQueue } from "../../../../../packages/rabbitmq/src/producer";
+import { frontendOrigins } from "./config";
+import { verifyAccessToken } from "./jwt";
 
 let io: Server;
 
 interface JwtPayload {
   userId: string;
-  email: string;
+  sessionId: string;
 }
 
 export const initSocket = async (server: any) => {
   io = new Server(server, {
     cors: {
-      origin: "*",
+      origin: frontendOrigins,
+      methods: ["GET", "POST"],
+      credentials: true,
     },
   });
 
@@ -37,10 +40,7 @@ export const initSocket = async (server: any) => {
         return next(new Error("Unauthorized"));
       }
 
-      const decoded = jwt.verify(
-        token,
-        process.env.JWT_ACCESS_SECRET!,
-      ) as JwtPayload;
+      const decoded = verifyAccessToken(token) as JwtPayload;
 
       socket.data.userId = decoded.userId;
 

@@ -2,7 +2,11 @@ import jwt from "jsonwebtoken";
 import { prisma } from "../../../../../packages/postgres/src/client";
 import { UserService } from "../user/user.service";
 import { hashPassword, comparePassword } from "../lib/hash";
-import { signAccessToken, signRefreshToken } from "../lib/jwt";
+import {
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+} from "../lib/jwt";
 
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 
@@ -47,7 +51,7 @@ export class AuthService {
     let payload: any;
 
     try {
-      payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!);
+      payload = verifyRefreshToken(refreshToken);
     } catch {
       throw new Error("Invalid refresh token");
     }
