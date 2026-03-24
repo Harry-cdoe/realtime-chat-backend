@@ -1,7 +1,6 @@
 import { Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { redis } from "../../../../../packages/redis/src/client";
-import { sendMessageToQueue } from "../../../../../packages/rabbitmq/src/producer";
 import { frontendOrigins } from "./config";
 import { verifyAccessToken } from "./jwt";
 
@@ -27,10 +26,10 @@ export const initSocket = async (server: any) => {
 
   io.adapter(createAdapter(redis, subClient));
 
-  console.log("✅ Redis Adapter attached successfully");
+  console.log("Redis Adapter attached successfully");
 
   /**
-   * 🔐 Socket Authentication Middleware
+   * Socket Authentication Middleware
    */
   io.use((socket, next) => {
     try {
@@ -51,12 +50,13 @@ export const initSocket = async (server: any) => {
   });
 
   /**
-   * 🚀 Socket Connection
+   * Socket Connection
    */
   io.on("connection", async (socket) => {
     const userId = socket.data.userId;
 
-    console.log(`👤 User connected: ${socket.id} (UID: ${userId})`);
+    console.log(`User connected: ${socket.id} (UID: ${userId})`);
+    socket.join(userId);
 
     // store online user in Redis
     await redis.set(`online:${userId}`, socket.id);
@@ -64,27 +64,35 @@ export const initSocket = async (server: any) => {
     /**
      * Join Chat Room
      */
-    socket.on("join_chat", (chatId: string) => {
+    socket.on("join_chat", (payload: unknown) => {
+      const chatId =
+        typeof payload === "string"
+          ? payload.trim()
+          : typeof (payload as { chatId?: unknown })?.chatId === "string"
+            ? ((payload as { chatId: string }).chatId || "").trim()
+            : "";
+
+      if (!chatId) {
+        console.error("Invalid join_chat payload", { userId, payload });
+        return;
+      }
+
+      if (socket.rooms.has(chatId)) {
+        return;
+      }
+
       socket.join(chatId);
-      console.log(`📥 User ${userId} joined room ${chatId}`);
+      console.log(`User ${userId} joined room ${chatId}`);
     });
 
     /**
-     * Send Message → RabbitMQ
+     * Send Message is API-only. Socket is receive-only for messages.
      */
-    socket.on("send_message", async (data) => {
-      try {
-        await sendMessageToQueue({
-          chatId: data.chatId,
-          senderId: userId,
-          message: data.message,
-          createdAt: new Date(),
-        });
-
-        console.log("📤 Message pushed to RabbitMQ");
-      } catch (error) {
-        console.error("❌ Failed to push message", error);
-      }
+    socket.on("send_message", () => {
+      socket.emit("message_error", {
+        code: "API_ONLY_SEND",
+        message: "Use REST API /api/chats/message to send messages",
+      });
     });
 
     /**
@@ -102,7 +110,7 @@ export const initSocket = async (server: any) => {
      * Disconnect
      */
     socket.on("disconnect", async () => {
-      console.log(`❌ User disconnected: ${socket.id}`);
+      console.log(`User disconnected: ${socket.id}`);
 
       await redis.del(`online:${userId}`);
     });

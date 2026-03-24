@@ -65,6 +65,16 @@ async function startServer() {
     await connectMongo();
     await prisma.$connect();
 
+    server = app.listen(apiPort, () => {
+      console.log(`API server running on port ${apiPort}`);
+    });
+
+    socketServer = createServer();
+    await initSocket(socketServer);
+    socketServer.listen(socketPort, () => {
+      console.log(`Socket server running on port ${socketPort}`);
+    });
+
     const rabbitConnected = await connectRabbitMQ();
     if (rabbitConnected) {
       try {
@@ -77,16 +87,6 @@ async function startServer() {
     }
 
     console.log("Databases connected");
-
-    server = app.listen(apiPort, () => {
-      console.log(`API server running on port ${apiPort}`);
-    });
-
-    socketServer = createServer();
-    await initSocket(socketServer);
-    socketServer.listen(socketPort, () => {
-      console.log(`Socket server running on port ${socketPort}`);
-    });
   } catch (error) {
     console.error("Startup error:", error);
     process.exit(1);
