@@ -1,4 +1,6 @@
-import "dotenv/config";
+import fs from "node:fs";
+import path from "node:path";
+import dotenv from "dotenv";
 import express from "express";
 import { createServer } from "http";
 import cors from "cors";
@@ -13,8 +15,34 @@ import {
   connectRabbitMQ,
   closeRabbitMQ,
 } from "../../../packages/rabbitmq/src/connection";
-import { startConsumer } from "../../../packages/rabbitmq/src/consumer";
+import { startRealtimeEventConsumer } from "../../../packages/rabbitmq/src/consumer";
 import { apiPort, frontendOrigins, socketPort } from "./modules/lib/config";
+
+const loadApiEnv = () => {
+  const candidates = [
+    path.resolve(__dirname, "../../../.env"),
+    path.resolve(process.cwd(), ".env"),
+    path.resolve(__dirname, "../.env"),
+  ];
+
+  for (const envPath of candidates) {
+    if (!fs.existsSync(envPath)) {
+      continue;
+    }
+
+    const result = dotenv.config({ path: envPath, override: false });
+    if (!result.error) {
+      console.log(`[api] Loaded env from: ${envPath}`);
+      return;
+    }
+  }
+
+  console.warn(
+    "[api] No .env file found in known paths. Relying on process environment variables.",
+  );
+};
+
+loadApiEnv();
 
 const app = express();
 
@@ -78,7 +106,8 @@ async function startServer() {
     const rabbitConnected = await connectRabbitMQ();
     if (rabbitConnected) {
       try {
-        await startConsumer();
+        console.log("[api] Starting realtime-event consumer...");
+        await startRealtimeEventConsumer();
       } catch (error) {
         console.warn("Could not start RabbitMQ consumer:", error);
       }

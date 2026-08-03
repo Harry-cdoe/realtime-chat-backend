@@ -1,6 +1,10 @@
 import { Request, Response } from "express";
 import { ChatService } from "./chat.service";
 import { sendMessageToQueue } from "../../../../../packages/rabbitmq/src/producer";
+import {
+  isAuthorizationError,
+  isValidationError,
+} from "./chat.auth";
 
 type MessageType = "text" | "image" | "video" | "file";
 
@@ -26,14 +30,18 @@ const isValidMessageType = (value: string): value is MessageType => {
 export class ChatController {
   static async createPrivate(req: Request, res: Response) {
     try {
-      const user1 = (req as any).user.userId; // Logged in user from token
-      const { userId: user2 } = req.body; // The friend's ID
+      const user1 = req.user?.userId;
+      const maybeUser2 = req.body?.userId;
 
-      if (!user2) {
+      if (!user1) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      if (typeof maybeUser2 !== "string") {
         return res.status(400).json({ message: "Recipient user2 is required" });
       }
 
-      const chat = await ChatService.createPrivateChat(user1, user2);
+      const chat = await ChatService.createPrivateChat(user1, maybeUser2);
       res.json(chat);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -54,7 +62,11 @@ export class ChatController {
 
   static async myChats(req: Request, res: Response) {
     try {
-      const userId = (req as any).user.userId;
+      const userId = req.user?.userId;
+
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
 
       const chats = await ChatService.getUserChats(userId);
 
@@ -169,10 +181,18 @@ export class ChatController {
         userId: req.user?.userId ?? null,
       });
 
-      if (error instanceof Error && error.message === "Chat not found") {
+      if (isAuthorizationError(error)) {
+        return res.status(403).json({
+          success: false,
+          message: error.message,
+          data: null,
+        });
+      }
+
+      if (isValidationError(error)) {
         return res.status(400).json({
           success: false,
-          message: "Validation failed: chat not found",
+          message: error.message,
           data: null,
         });
       }
@@ -188,8 +208,13 @@ export class ChatController {
   static async getMessages(req: Request, res: Response) {
     try {
       const { chatId } = req.params as { chatId: string };
+      const userId = req.user?.userId;
 
-      const messages = await ChatService.getMessages(chatId);
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const messages = await ChatService.getMessages(chatId, userId);
 
       const normalizedMessages = messages.map((message: any) => ({
         ...message,
@@ -199,8 +224,16 @@ export class ChatController {
       }));
 
       res.json(normalizedMessages);
-    } catch (err: any) {
-      res.status(400).json({ message: err.message });
+    } catch (error: unknown) {
+      if (isAuthorizationError(error)) {
+        return res.status(403).json({ message: error.message });
+      }
+
+      if (isValidationError(error)) {
+        return res.status(400).json({ message: error.message });
+      }
+
+      res.status(500).json({ message: "Internal Server Error" });
     }
   }
 
@@ -208,13 +241,25 @@ export class ChatController {
     try {
       const { chatId } = req.params as { chatId: string };
 
-      const userId = (req as any).user.userId;
+      const userId = req.user?.userId;
+
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
 
       await ChatService.markAsRead(chatId, userId);
 
       res.json({ message: "Marked as read" });
-    } catch (err: any) {
-      res.status(400).json({ message: err.message });
+    } catch (error: unknown) {
+      if (isAuthorizationError(error)) {
+        return res.status(403).json({ message: error.message });
+      }
+
+      if (isValidationError(error)) {
+        return res.status(400).json({ message: error.message });
+      }
+
+      res.status(500).json({ message: "Internal Server Error" });
     }
   }
 }

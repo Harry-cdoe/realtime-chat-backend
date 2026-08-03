@@ -1,8 +1,16 @@
 import { Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { redis } from "../../../../../packages/redis/src/client";
+import { ChatService } from "../chat/chat.service";
 import { frontendOrigins } from "./config";
 import { verifyAccessToken } from "./jwt";
+import {
+  assertUserIsParticipant,
+  AuthorizationError,
+  isAuthorizationError,
+  isValidationError,
+  ValidationError,
+} from "../chat/chat.auth";
 
 let io: Server;
 
@@ -64,7 +72,7 @@ export const initSocket = async (server: any) => {
     /**
      * Join Chat Room
      */
-    socket.on("join_chat", (payload: unknown) => {
+    socket.on("join_chat", async (payload: unknown) => {
       const chatId =
         typeof payload === "string"
           ? payload.trim()
@@ -73,11 +81,40 @@ export const initSocket = async (server: any) => {
             : "";
 
       if (!chatId) {
-        console.error("Invalid join_chat payload", { userId, payload });
+        socket.emit("error", {
+          code: "INVALID_PAYLOAD",
+          message: "chatId is required to join chat",
+        });
         return;
       }
 
       if (socket.rooms.has(chatId)) {
+        return;
+      }
+
+      try {
+        await assertUserIsParticipant(chatId, userId);
+      } catch (error: unknown) {
+        if (isAuthorizationError(error)) {
+          socket.emit("error", {
+            code: "FORBIDDEN",
+            message: error.message,
+          });
+          return;
+        }
+
+        if (isValidationError(error)) {
+          socket.emit("error", {
+            code: "VALIDATION_ERROR",
+            message: error.message,
+          });
+          return;
+        }
+
+        socket.emit("error", {
+          code: "UNKNOWN_ERROR",
+          message: "Unable to join chat",
+        });
         return;
       }
 
@@ -96,14 +133,183 @@ export const initSocket = async (server: any) => {
     });
 
     /**
-     * Typing Indicators
+     * Message delivered acknowledgement from receiver.
      */
-    socket.on("typing_start", (chatId: string) => {
-      socket.to(chatId).emit("typing_start", { userId });
+    socket.on("receive_message_ack", async (payload: unknown) => {
+      try {
+        const chatId =
+          typeof (payload as { chatId?: unknown })?.chatId === "string"
+            ? ((payload as { chatId: string }).chatId || "").trim()
+            : "";
+        const messageId =
+          typeof (payload as { messageId?: unknown })?.messageId === "string"
+            ? ((payload as { messageId: string }).messageId || "").trim()
+            : "";
+
+        if (!chatId || !messageId) {
+          socket.emit("error", {
+            code: "INVALID_PAYLOAD",
+            message: "chatId and messageId are required",
+          });
+          return;
+        }
+
+        const updated = await ChatService.markMessageDelivered(
+          chatId,
+          messageId,
+          userId,
+          { skipAuth: socket.rooms.has(chatId) },
+        );
+
+        if (!updated) {
+          return;
+        }
+
+        socket.to(chatId).emit("message_delivered", {
+          messageId,
+          chatId,
+          userId,
+          status: "delivered",
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.error("receive_message_ack failed", error);
+      }
     });
 
-    socket.on("typing_stop", (chatId: string) => {
-      socket.to(chatId).emit("typing_stop", { userId });
+    /**
+     * Mark chat messages as read.
+     */
+    socket.on("mark_read", async (payload: unknown) => {
+      try {
+        const chatId =
+          typeof (payload as { chatId?: unknown })?.chatId === "string"
+            ? ((payload as { chatId: string }).chatId || "").trim()
+            : "";
+
+        const incomingMessageIds = (payload as { messageIds?: unknown })
+          ?.messageIds;
+        const messageIds = Array.isArray(incomingMessageIds)
+          ? incomingMessageIds
+              .filter((id): id is string => typeof id === "string")
+              .map((id) => id.trim())
+              .filter((id) => id.length > 0)
+          : [];
+
+        if (!chatId) {
+          socket.emit("error", {
+            code: "INVALID_PAYLOAD",
+            message: "chatId is required",
+          });
+          return;
+        }
+
+        const updatedMessageIds = await ChatService.markMessagesRead(
+          chatId,
+          userId,
+          messageIds,
+          { skipAuth: socket.rooms.has(chatId) },
+        );
+
+        if (updatedMessageIds.length === 0) {
+          return;
+        }
+
+        socket.to(chatId).emit("message_read", {
+          messageIds: updatedMessageIds,
+          chatId,
+          userId,
+          status: "read",
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.error("mark_read failed", error);
+      }
+    });
+
+    /**
+     * Typing Indicators
+     */
+    socket.on("typing_start", async (chatId: string) => {
+      const normalizedChatId = typeof chatId === "string" ? chatId.trim() : "";
+      if (!normalizedChatId) {
+        socket.emit("error", {
+          code: "INVALID_PAYLOAD",
+          message: "chatId is required",
+        });
+        return;
+      }
+
+      if (!socket.rooms.has(normalizedChatId)) {
+        try {
+          await assertUserIsParticipant(normalizedChatId, userId);
+        } catch (error: unknown) {
+          if (isAuthorizationError(error)) {
+            socket.emit("error", {
+              code: "FORBIDDEN",
+              message: error.message,
+            });
+            return;
+          }
+
+          if (isValidationError(error)) {
+            socket.emit("error", {
+              code: "VALIDATION_ERROR",
+              message: error.message,
+            });
+            return;
+          }
+
+          socket.emit("error", {
+            code: "UNKNOWN_ERROR",
+            message: "Unable to start typing indicator",
+          });
+          return;
+        }
+      }
+
+      socket.to(normalizedChatId).emit("typing_start", { userId });
+    });
+
+    socket.on("typing_stop", async (chatId: string) => {
+      const normalizedChatId = typeof chatId === "string" ? chatId.trim() : "";
+      if (!normalizedChatId) {
+        socket.emit("error", {
+          code: "INVALID_PAYLOAD",
+          message: "chatId is required",
+        });
+        return;
+      }
+
+      if (!socket.rooms.has(normalizedChatId)) {
+        try {
+          await assertUserIsParticipant(normalizedChatId, userId);
+        } catch (error: unknown) {
+          if (isAuthorizationError(error)) {
+            socket.emit("error", {
+              code: "FORBIDDEN",
+              message: error.message,
+            });
+            return;
+          }
+
+          if (isValidationError(error)) {
+            socket.emit("error", {
+              code: "VALIDATION_ERROR",
+              message: error.message,
+            });
+            return;
+          }
+
+          socket.emit("error", {
+            code: "UNKNOWN_ERROR",
+            message: "Unable to stop typing indicator",
+          });
+          return;
+        }
+      }
+
+      socket.to(normalizedChatId).emit("typing_stop", { userId });
     });
 
     /**

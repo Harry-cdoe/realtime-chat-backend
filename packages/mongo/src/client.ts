@@ -2,11 +2,21 @@ import mongoose from "mongoose";
 
 let isConnected = false;
 
-const MONGO_URL = process.env.MONGO_URL;
+const getMongoUrl = (): string => {
+  const mongoUrl =
+    process.env.MONGO_URL ||
+    process.env.MONGO_URI ||
+    process.env.MONGODB_URL ||
+    process.env.MONGODB_URI;
 
-if (!MONGO_URL) {
-  throw new Error("MONGO_URL not defined");
-}
+  if (!mongoUrl) {
+    throw new Error(
+      "Mongo connection string not defined (set MONGO_URL, MONGO_URI, MONGODB_URL, or MONGODB_URI)",
+    );
+  }
+
+  return mongoUrl;
+};
 
 /**
  * Connect to MongoDB (Singleton)
@@ -19,9 +29,10 @@ export const connectMongo = async (): Promise<void> => {
   }
 
   try {
+    const mongoUrl = getMongoUrl();
     console.log("Connecting to MongoDB...");
 
-    await mongoose.connect(MONGO_URL, {
+    await mongoose.connect(mongoUrl, {
       maxPoolSize: 20, // max concurrent connections
 
       serverSelectionTimeoutMS: 5000, // fail fast if DB unavailable
